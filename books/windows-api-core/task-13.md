@@ -40,6 +40,36 @@ HWND不是工作线程句柄；它告诉PostMessage要把消息交给哪个窗�
 
 把消息循环理解为“持续取消息并分发”，把窗口过程理解为“具体处理消息的函数”。本课先认识它们的职责，不要求马上独立写完整窗口注册与创建代码。
 
+## 补充：窗口由另一个线程创建时，消息由谁处理？
+
+前文把窗口放在主线程，是本例的角色安排。对于这里的PostMessage(hwnd, ...)，一般规则是：**消息投给目标窗口所属线程的队列，由该线程的消息循环取出并分发到窗口过程。窗口所属线程就是创建该窗口的线程，不必是主线程。**
+
+例如主线程没有窗口，线程B创建窗口hwndB并持续运行消息循环，线程A负责计算：
+
+```cpp
+// 在线程A中，向线程B创建的窗口报告进度
+PostMessage(hwndB, WM_PROGRESS, 50, 0);
+```
+
+助手绘制的对应路径：
+
+```mermaid
+flowchart LR
+    A[线程A<br/>计算并PostMessage] --> Q[线程B的消息队列]
+    Q --> L[线程B的消息循环<br/>取出并DispatchMessage]
+    L --> P[线程B执行目标窗口过程<br/>处理WM_PROGRESS]
+```
+
+这个路径不需要经过主线程，也不需要有一个主窗口充当中转站。线程B承担这个窗口的界面处理职责；线程被称为“工作线程”并不禁止它创建窗口或运行消息循环。
+
+“分发”是消息循环将消息交给相应窗口过程处理，不是先经过一个主窗口再转发给其他窗口。同一线程创建多个窗口时，它们的投递消息由该线程的队列和消息循环处理，再依据目标窗口分别分发。
+
+但要区分“B创建窗口”和“B只是保存/使用了窗口句柄”：如果窗口实际由主线程创建，B拿到它的HWND并不会改变窗口所属线程，投递消息仍由创建它的主线程处理。判断归属要看创建者，不能只看哪个线程持有句柄。
+
+另一个接口PostThreadMessage按线程ID投递，不绑定具体窗口；接收线程要先具备消息队列并自己取出、处理线程消息。这种消息通常不能直接用DispatchMessage送到窗口过程。它与本段PostMessage(hwndB, ...)的窗口消息路径分开理解，后面讲原书显示线程时再展开。
+
+依据：[PostMessage的目标线程队列](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postmessagew)、[DispatchMessage的窗口过程分发](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dispatchmessagew)、[PostThreadMessage与窗口无关的线程消息](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postthreadmessagew)，2026-11-04核对。本补充是助手解释，不改写原书引用；原题条件仍是主线程创建窗口。
+
 ## 四、完整消息流：谁做了哪一步？
 
 助手定义一个应用内使用的消息编号：
